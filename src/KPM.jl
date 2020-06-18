@@ -4,7 +4,7 @@
 using Base.Threads
 
 struct MomentaKPM{T,B<:Tuple}
-    mulist::Vector{T}
+    μlist::Vector{T}
     bandbracket::B
 end
 
@@ -14,7 +14,7 @@ struct KPMBuilder{A,H<:AbstractMatrix,T,K,B}
     bandbracket::Tuple{B,B}
     order::Int
     missingket::Bool
-    mulist::Vector{T}
+    μlist::Vector{T}
     ket::K
     ket0::K
     ket1::K
@@ -23,12 +23,12 @@ end
 function KPMBuilder(h::AbstractMatrix{Tv}, A = _defaultA(Tv); ket = missing, order = 10, bandrange = missing) where {Tv}
     eh = eltype(eltype(h))
     aA = eltype(eltype(A))
-    mulist = zeros(promote_type(eh, aA), order + 1)
+    μlist = zeros(promote_type(eh, aA), order + 1)
     bandbracket = bandbracketKPM(h, bandrange)
     missingket = ket === missing
     ket´ = missingket ? ketundef(h) : ket
     iscompatibleket(h, ket´) || throw(ArgumentError("ket is incompatible with Hamiltonian"))
-    builder = KPMBuilder(A, h, bandbracket, order, missingket, mulist, ket´, similar(ket´), similar(ket´))
+    builder = KPMBuilder(A, h, bandbracket, order, missingket, μlist, ket´, similar(ket´), similar(ket´))
     return builder
 end
 
@@ -47,11 +47,10 @@ _iscompatibleket(::Type{S1}, ::Type{S2}) where {N, S1<:SMatrix{N,N}, S2<:SMatrix
     _iscompatibleket(eltype(S1), eltype(S2))
 _iscompatibleket(t1, t2) = false
 
-function matrixKPM(h::Hamiltonian{<:Lattice,L}, method = missing) where {L}
+function matrixKPM(h::Hamiltonian{<:Lattice,L}) where {L}
     iszero(L) ||
         throw(ArgumentError("Hamiltonian is defined on an infinite lattice. Convert it to a matrix first using `bloch(h, φs...)`"))
-    m = similarmatrix(h, method)
-    return bloch!(m, h)
+    return bloch(h)
 end
 
 matrixKPM(h::AbstractMatrix) = h
@@ -78,27 +77,23 @@ julia> momentaKPM(bloch(h), bandrange = (-6,6))
 Quantica.MomentaKPM{Float64}([0.9594929736144973, -0.005881595972403821, -0.4933354572913581, 0.00359537502632597, 0.09759451291347333, -0.0008081453185250322, -0.00896262538765363, 0.00048205637037715177, -0.0003705198310034668, 9.64901673962623e-20, 9.110915988898614e-18], (0.0, 6.030150753768845))
 ```
 """
-function momentaKPM(h::Hamiltonian, A = _defaultA(eltype(h)); bandrange = missing, kw...)
-    bandrange´ = bandrange === missing ? bandrangeKPM(h) : bandrange
-    momenta = momentaKPM(matrixKPM(h), matrixKPM(A); bandrange = bandrange´, kw...)
-    return momenta
-end
+momentaKPM(h::Hamiltonian, A = _defaultA(eltype(h)); kw...) = momentaKPM(matrixKPM(h), matrixKPM(A); kw...)
 
 function momentaKPM(h::AbstractMatrix, A = _defaultA(eltype(h)); randomkets = 1, kw...)
-    b = KPMBuilder(h, A; kw...)
+   b = KPMBuilder(h, A; kw...)
     if b.missingket
         pmeter = Progress(b.order * randomkets, "Averaging moments: ")
         for n in 1:randomkets
             randomize!(b.ket)
             addmomentaKPM!(b, pmeter)
         end
-        b.mulist ./= randomkets
+        b.μlist ./= randomkets
     else
         pmeter = Progress(b.order, "Computing moments: ")
         addmomentaKPM!(b, pmeter)
     end
-    jackson!(b.mulist)
-    return MomentaKPM(b.mulist, b.bandbracket)
+    jackson!(b.μlist)
+    return MomentaKPM(b.μlist, b.bandbracket)
 end
 
 _defaultA(::Type{T}) where {T<:Number} = one(T) * I
@@ -108,30 +103,30 @@ _defaultA(::Type{S}) where {N,T,S<:SMatrix{N,N,T}} = one(T) * I
 # In practice we iterate their conjugate |psi_n> = T_n(h') A'|psi_0>, and do the projection
 # onto the start ket, |psi_0>
 function addmomentaKPM!(b::KPMBuilder{<:AbstractMatrix,<:AbstractSparseMatrix}, pmeter)
-    mulist, ket, ket0, ket1 = b.mulist, b.ket, b.ket0, b.ket1
+    μlist, ket, ket0, ket1 = b.μlist, b.ket, b.ket0, b.ket1
     h, A, bandbracket = b.h, b.A, b.bandbracket
-    order = length(mulist) - 1
+    order = length(μlist) - 1
     mul!(ket0, A', ket)
     mulscaled!(ket1, h', ket0, bandbracket)
-    mulist[1] += proj(ket0, ket)
-    mulist[2] += proj(ket1, ket)
+    μlist[1] += proj(ket0, ket)
+    μlist[2] += proj(ket1, ket)
     for n in 3:(order+1)
         ProgressMeter.next!(pmeter; showvalues = ())
         iterateKPM!(ket0, h', ket1, bandbracket)
-        mulist[n] += proj(ket0, ket)
+        μlist[n] += proj(ket0, ket)
         ket0, ket1 = ket1, ket0
     end
-    return mulist
+    return μlist
 end
 
 function addmomentaKPM!(b::KPMBuilder{<:UniformScaling, <:AbstractSparseMatrix,T}, pmeter) where {T}
-    mulist, ket, ket0, ket1, = b.mulist, b.ket, b.ket0, b.ket1
+    μlist, ket, ket0, ket1, = b.μlist, b.ket, b.ket0, b.ket1
     h, A, bandbracket = b.h, b.A, b.bandbracket
-    order = length(mulist) - 1
+    order = length(μlist) - 1
     ket0 .= ket
     mulscaled!(ket1, h', ket0, bandbracket)
-    mulist[1] += μ0 = 1.0
-    mulist[2] += μ1 = proj(ket1, ket0)
+    μlist[1] += μ0 = 1.0
+    μlist[2] += μ1 = proj(ket1, ket0)
     # This is not used in the currently activated codepath (BLAS mul!), but is needed in the
     # commented out @threads codepath
     thread_buffers = (zeros(T, Threads.nthreads()), zeros(T, Threads.nthreads()))
@@ -139,13 +134,13 @@ function addmomentaKPM!(b::KPMBuilder{<:UniformScaling, <:AbstractSparseMatrix,T
         ProgressMeter.next!(pmeter; showvalues = ())
         ProgressMeter.next!(pmeter; showvalues = ()) # twice because of 2-step
         proj11, proj10 = iterateKPM!(ket0, h', ket1, bandbracket, thread_buffers)
-        mulist[n] += 2 * proj11 - μ0
+        μlist[n] += 2 * proj11 - μ0
         n + 1 > order + 1 && break
-        mulist[n + 1] += 2 * proj10 - μ1
+        μlist[n + 1] += 2 * proj10 - μ1
         ket0, ket1 = ket1, ket0
     end
-    A.λ ≈ 1 || (mulist .*= A.λ)
-    return mulist
+    A.λ ≈ 1 || (μlist .*= A.λ)
+    return μlist
 end
 
 function mulscaled!(y, h´, x, (center, halfwidth))
@@ -155,59 +150,59 @@ function mulscaled!(y, h´, x, (center, halfwidth))
     return y
 end
 
-function iterateKPM!(ket0, h´, ket1, (center, halfwidth), buff = ())
-    α = 2/halfwidth
-    β = 2center/halfwidth
-    mul!(ket0, h´, ket1, α, -1)
-    @. ket0 = ket0 - β * ket1
-    return proj_or_nothing(buff, ket0, ket1)
-end
+#function iterateKPM!(ket0, h´, ket1, (center, halfwidth), buff = ())
+#    α = 2/halfwidth
+#   β = 2center/halfwidth
+#    mul!(ket0, h´, ket1, α, -1)
+#    @. ket0 = ket0 - β * ket1
+#    return proj_or_nothing(buff, ket0, ket1)
+#end
 
 proj_or_nothing(::Tuple{}, ket0, ket1) = nothing
 proj_or_nothing(buff, ket0, ket1) = (proj(ket1, ket1), proj(ket1, ket0))
 
+ function iterateKPM!(ket0, h´, ket1, (center, halfwidth), thread_buffers = ())
+     h = parent(h´)
+     nz = nonzeros(h)
+     rv = rowvals(h)
+     α = -2 * center / halfwidth
+    β = 2 / halfwidth
+     reset_buffers!(thread_buffers)
+     @threads for row in 1:size(ket0, 1)
+         ptrs = nzrange(h, row)
+         @inbounds for col in 1:size(ket0, 2)
+             k1 = ket1[row, col]
+             tmp = α * k1 - ket0[row, col]
+             for ptr in ptrs
+                 tmp += β * adjoint(nz[ptr]) * ket1[rv[ptr], col]
+             end
+             # |k0⟩ → (⟨k1|2h - ⟨k0|)' = 2h'|k1⟩ - |k0⟩
+             ket0[row, col] = tmp
+             update_buffers!(thread_buffers, k1, tmp)
+         end
+     end
+     return sum_buffers(thread_buffers)
+ end
+
+ reset_buffers!(::Tuple{}) = nothing
+ function reset_buffers!((q, q´))
+     fill!(q, zero(eltype(q)))
+     fill!(q´, zero(eltype(q´)))
+     return nothing
+ end
+
+ @inline update_buffers!(::Tuple{}, k1, tmp) = nothing
+ @inline function update_buffers!((q, q´), k1, tmp)
+     q[threadid()]  += dot(k1, k1)
+     q´[threadid()] += dot(tmp, k1)
+     return nothing
+ end
+
+ @inline sum_buffers(::Tuple{}) = nothing
+ @inline sum_buffers((q, q´)) = (sum(q), sum(q´))
+
 # This is equivalent to tr(ket1'*ket2) for matrices, and ket1'*ket2 for vectors
 proj(ket1, ket2) = dot(vec(ket1), vec(ket2))
-
-# function iterateKPM!(ket0, h´, ket1, (center, halfwidth), thread_buffers = ())
-#     h = parent(h´)
-#     nz = nonzeros(h)
-#     rv = rowvals(h)
-#     α = -2 * center / halfwidth
-#     β = 2 / halfwidth
-#     reset_buffers!(thread_buffers)
-#     @threads for row in 1:size(ket0, 1)
-#         ptrs = nzrange(h, row)
-#         @inbounds for col in 1:size(ket0, 2)
-#             k1 = ket1[row, col]
-#             tmp = α * k1 - ket0[row, col]
-#             for ptr in ptrs
-#                 tmp += β * adjoint(nz[ptr]) * ket1[rv[ptr], col]
-#             end
-#             # |k0⟩ → (⟨k1|2h - ⟨k0|)' = 2h'|k1⟩ - |k0⟩
-#             ket0[row, col] = tmp
-#             update_buffers!(thread_buffers, k1, tmp)
-#         end
-#     end
-#     return sum_buffers(thread_buffers)
-# end
-
-# reset_buffers!(::Tuple{}) = nothing
-# function reset_buffers!((q, q´))
-#     fill!(q, zero(eltype(q)))
-#     fill!(q´, zero(eltype(q´)))
-#     return nothing
-# end
-
-# @inline update_buffers!(::Tuple{}, k1, tmp) = nothing
-# @inline function update_buffers!((q, q´), k1, tmp)
-#     q[threadid()]  += dot(k1, k1)
-#     q´[threadid()] += dot(tmp, k1)
-#     return nothing
-# end
-
-# @inline sum_buffers(::Tuple{}) = nothing
-# @inline sum_buffers((q, q´)) = (sum(q), sum(q´))
 
 function randomize!(v::AbstractVector{T}) where {T}
     v .= _randomize.(v)
@@ -228,14 +223,12 @@ function jackson!(μ::AbstractVector)
 end
 
 function bandbracketKPM(h, ::Missing)
+    @warn "Computing spectrum bounds... Consider using the `bandrange` kwargs for faster performance."
     bandbracketKPM(h, bandrangeKPM(h))
 end
 bandbracketKPM(h, (ϵmin, ϵmax)::Tuple{T,T}, pad = float(T)(0.01)) where {T} = ((ϵmax + ϵmin) / 2, (ϵmax - ϵmin) / (2 - pad))
 
-bandrangeKPM(h::Hamiltonian) = bandrangeKPM(matrixKPM(h, ArnoldiMethodPackage()))
-
 function bandrangeKPM(h::AbstractMatrix{T}) where {T}
-    @warn "Computing spectrum bounds... Consider using the `bandrange` option for faster performance."
     checkloaded(:ArnoldiMethod)
     R = real(T)
     decompl, _ = Main.ArnoldiMethod.partialschur(h, nev=1, tol=1e-4, which = Main.ArnoldiMethod.LR());
@@ -269,10 +262,12 @@ Same as above with momenta `μ` as input.
 
 Equivalent to `dosKPM(bloch(h); kw...)` for finite hamiltonians (zero dimensional).
 """
-dosKPM(h; resolution = 2, kw...) =
+dosKPM(h::AbstractMatrix; resolution = 2, kw...) =
     dosKPM(momentaKPM(h; kw...), resolution = resolution)
 
 dosKPM(μ::MomentaKPM; resolution = 2) = real.(densityKPM(μ; resolution = resolution))
+
+dosKPM(h::Hamiltonian; kw...) = dosKPM(matrixKPM(h); kw...)
 
 """
     densityKPM(h::AbstractMatrix, A; resolution = 2, kw...)
@@ -293,15 +288,17 @@ Same as above with the KPM momenta as input (see `momentaKPM`).
 
 Equivalent to `densityKPM(bloch(h), bloch(A); kw...)` for finite Hamiltonians (zero dimensional).
 """
-densityKPM(h, A; resolution = 2, kw...) =
+densityKPM(h::AbstractMatrix, A; resolution = 2, kw...) =
     densityKPM(momentaKPM(h, A; kw...); resolution = resolution)
+
+densityKPM(h::Hamiltonian, A::Hamiltonian; kw...) = densityKPM(matrixKPM(h), matrixKPM(A); kw...)
 
 function densityKPM(momenta::MomentaKPM{T}; resolution = 2) where {T}
     checkloaded(:FFTW)
     (center, halfwidth) = momenta.bandbracket
-    numpoints = round(Int, length(momenta.mulist) * resolution)
+    numpoints = round(Int, length(momenta.μlist) * resolution)
     ρlist = zeros(T, numpoints)
-    copyto!(ρlist, momenta.mulist)
+    copyto!(ρlist, momenta.μlist)
     Main.FFTW.r2r!(ρlist, Main.FFTW.REDFT01, 1)  # DCT-III in FFTW
     xk = [cos(π * (k + 0.5) / numpoints) for k in 0:numpoints - 1]
     @. ρlist = center + halfwidth * ρlist / (π * sqrt(1.0 - xk^2))
@@ -327,16 +324,18 @@ Same as above with the KPM momenta as input (see `momentaKPM`).
 Equivalent to `averageKPM(bloch(h), bloch(A); kw...)` for finite Hamiltonians (zero
 dimensional).
 """
-averageKPM(h, A; kBT = 0, Ef = 0, kw...) = averageKPM(momentaKPM(h, A; kw...); kBT = kBT, Ef = Ef)
+averageKPM(h::AbstractMatrix, A; kBT = 0, Ef = 0, kw...) = averageKPM(momentaKPM(h, A; kw...); kBT = kBT, Ef = Ef)
+
+averageKPM(h::Hamiltonian, A::Hamiltonian; kw...) = averageKPM(matrixKPM(h), matrixKPM(A); kw...)
 
 function averageKPM(momenta::MomentaKPM{T}; kBT = 0.0, Ef = 0.0) where {T}
     (center, halfwidth) = momenta.bandbracket
-    order = length(momenta.mulist) - 1
+    order = length(momenta.μlist) - 1
     # if !iszero(kBT)
     #     @warn "Finite temperature requires numerical evaluation of the integrals"
     #     checkloaded(:QuadGK)
     # end
-    average = sum(n -> momenta.mulist[n + 1] * fermicheby(n, Ef, kBT, center, halfwidth), 0:order)
+    average = sum(n -> momenta.μlist[n + 1] * fermicheby(n, Ef, kBT, center, halfwidth), 0:order)
     return average
 end
 
