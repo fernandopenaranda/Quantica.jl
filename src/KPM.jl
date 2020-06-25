@@ -158,7 +158,7 @@ end
 function iterateKPM!(ket0, h´, ket1, (center, halfwidth), buff = ())
     α = 2/halfwidth
     β = 2center/halfwidth
-    mul!(ket0, h´, ket1, α, -1)
+    mul!(α, h´, ket1, -1, ket0)
     @. ket0 = ket0 - β * ket1
     return proj_or_nothing(buff, ket0, ket1)
 end
