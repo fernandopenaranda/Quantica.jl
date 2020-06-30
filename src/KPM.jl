@@ -161,7 +161,7 @@ function iterateKPM!(ket0, h´, ket1, (center, halfwidth), buff = ())
     mul!(complex(α), h´, ket1, -1.0 + 0.0im, ket0)
     #@. ket0 = ket0 + β * ket1
     BLAS.axpy!(β, ket1, ket0)
-    return nothing#proj_or_nothing(buff, ket0, ket1)
+    return proj_or_nothing(buff, ket0, ket1)
 end
 
 proj_or_nothing(::Tuple{}, ket0, ket1) = nothing
