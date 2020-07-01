@@ -168,7 +168,7 @@ proj_or_nothing(::Tuple{}, ket0, ket1) = nothing
 proj_or_nothing(buff, ket0, ket1) = (proj(ket1, ket1), proj(ket1, ket0))
 
 # This is equivalent to tr(ket1'*ket2) for matrices, and ket1'*ket2 for vectors
-proj(ket1, ket2) = dot(ket1, ket2) #dot(vec(ket1), vec(ket2))
+proj(ket1, ket2) = dot(vec(ket1), vec(ket2)) #dot(ket1, ket2) 
 
 # function iterateKPM!(ket0, h´, ket1, (center, halfwidth), thread_buffers = ())
 #     h = parent(h´)
