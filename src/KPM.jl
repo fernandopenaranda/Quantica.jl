@@ -50,8 +50,8 @@ _iscompatibleket(t1, t2) = false
 function matrixKPM(h::Hamiltonian{<:Lattice,L}, method = missing) where {L}
     iszero(L) ||
         throw(ArgumentError("Hamiltonian is defined on an infinite lattice. Convert it to a matrix first using `bloch(h, φs...)`"))
-    m = similarmatrix(h, method)
-    return bloch!(m, h)
+    m = similarmatrix(flatten(h), method)
+    return bloch!(m, flatten(h))
 end
 
 matrixKPM(h::AbstractMatrix) = h
